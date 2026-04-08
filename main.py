@@ -44,7 +44,7 @@ def main() -> None:
 
     builder = MeteogramBuilder(
         times,
-        title=f"Latitude: {selected_lat}, Longitude: {selected_lon}",
+        title=f"Latitude: {selected_lat:.5f}, Longitude: {selected_lon:.5f}",
         height_per_panel=230,
     )
     builder.extend(
@@ -58,21 +58,45 @@ def main() -> None:
                     SeriesSpec(
                         "Temperature (2m)",
                         temperature,
-                        line={"color": "#ff3b30", "width": 2}
+                        line={
+                            "color": "#ff3b30",
+                            "width": 2
+                        },
+                        trace_kwargs={
+                            # information for the hover tooltip
+                            "hovertemplate": "%{customdata:.1f} °C",
+                            "customdata": temperature,
+                        },
                     ),
                     SeriesSpec(
                         "Dew Point (2m)",
                         dew_point,
-                        line={"color": "#9b6bd6", "width": 2}
+                        line={
+                            "color": "#9b6bd6",
+                            "width": 2
+                        },
+                        trace_kwargs={
+                            # information for the hover tooltip
+                            "hovertemplate": "%{customdata:.1f} °C",
+                            "customdata": dew_point,
+                        },
                     ),
                     SeriesSpec(
                         "Relative Humidity (2m)",
                         humidity,
-                        line={"color": "rgba(46, 134, 222, 0.0)", "width": 0},
+                        line={
+                            "color": "rgba(46, 134, 222, 0.0)",
+                            "width": 0
+                        },
                         fill="tozeroy",
                         fillcolor="rgba(46, 134, 222, 0.20)",
                         secondary_y=True,
                         render_order=-1,
+                        trace_kwargs={
+                            # information for the hover tooltip
+                            "hovertemplate": "%{customdata:.1f}%",
+                            "customdata": humidity,
+                        },
                     )
                 ],
             ),
@@ -84,7 +108,16 @@ def main() -> None:
                     SeriesSpec(
                         "Wind Speed (10m)",
                         wind_speed,
-                        line={"color": "#2ecc71", "width": 2}),
+                        line={
+                            "color": "#2ecc71",
+                            "width": 2
+                        },
+                        trace_kwargs={
+                            # information for the hover tooltip
+                            "hovertemplate": "%{customdata:.1f} m/s",
+                            "customdata": wind_speed,
+                        }
+                    ),
                     SeriesSpec(
                         "Wind Direction (10m)",
                         wind_arrow_level,
@@ -98,9 +131,9 @@ def main() -> None:
                         marker_angles=wind_direction,
                         showlegend=False,
                         trace_kwargs={
-                            "hovertemplate": "%{x}<br>Speed: %{customdata[0]:.1f} m/s<br>"
-                            "Direction: %{customdata[1]:.0f}°<extra></extra>",
-                            "customdata": np.column_stack((wind_speed, wind_direction)).tolist(),
+                            # information for the hover tooltip
+                            "hovertemplate": "%{customdata:.0f}°",
+                            "customdata": wind_direction,
                         },
                     ),
                 ],
