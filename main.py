@@ -7,7 +7,14 @@ import xarray as xr
 from meteogram import MeteogramBuilder, PanelSpec, SeriesSpec, create_wind_direction_panel
 
 # %%
+def open_test_dataset(path: str = "test/test_data.nc") -> xr.Dataset:
+    return xr.open_dataset(path, engine="scipy")
+
+
 def main() -> None:
+    dataset = open_test_dataset()
+    print("Opened dataset:", dataset.dims)
+
     start = datetime(2026, 2, 27, 0, 0)
     hours = [start + timedelta(hours=index) for index in range(49)]
 
@@ -72,7 +79,7 @@ def main() -> None:
     )
 
     figure = builder.to_figure()
-    figure.write_html("meteogram_demo.html")
+    figure.write_html("test/meteogram_demo.html")
     print("Wrote meteogram_demo.html")
 
 

@@ -7,11 +7,11 @@ name = "meteogram"
 version = "0.1.0"
 description = "Flexible Plotly helpers for building meteogram subplots and full figures"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.14"
 dependencies = [
     "plotly>=5.0.0",
     "xarray>=0.20.2",
-    "zxarray",
+    "scipy>=1.15",
 ]
 
 [project.scripts]
