@@ -18,6 +18,7 @@ class SeriesSpec:
     fillcolor: Optional[str] = None
     stackgroup: Optional[str] = None
     opacity: Optional[float] = None
+    marker_angles: Optional[Sequence[float]] = None
     secondary_y: bool = False
     showlegend: bool = True
     render_order: int = 0
@@ -26,13 +27,16 @@ class SeriesSpec:
     def to_trace(self, x: Sequence[Any]) -> Any:
         trace_kwargs = dict(self.trace_kwargs)
         trace_type = trace_kwargs.pop("type", "scatter")
+        marker = dict(self.marker or {})
+        if self.marker_angles is not None:
+            marker["angle"] = list(self.marker_angles)
 
         if trace_type == "bar":
             return go.Bar(
                 x=x,
                 y=self.values,
                 name=self.name,
-                marker=self.marker,
+                marker=marker or None,
                 opacity=self.opacity,
                 showlegend=self.showlegend,
                 **trace_kwargs,
@@ -44,7 +48,7 @@ class SeriesSpec:
             name=self.name,
             mode=self.mode,
             line=self.line,
-            marker=self.marker,
+            marker=marker or None,
             fill=self.fill,
             fillcolor=self.fillcolor,
             stackgroup=self.stackgroup,
@@ -183,7 +187,6 @@ def create_wind_direction_panel(
             )
         ],
     )
-
 
 class MeteogramBuilder:
     """Incrementally build a meteogram figure."""

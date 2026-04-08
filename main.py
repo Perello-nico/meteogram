@@ -3,31 +3,48 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from math import cos, sin
+import numpy as np
 import xarray as xr
-from meteogram import MeteogramBuilder, PanelSpec, SeriesSpec, create_wind_direction_panel
+from meteogram import MeteogramBuilder, PanelSpec, SeriesSpec
 
 # %%
-def open_test_dataset(path: str = "test/test_data.nc") -> xr.Dataset:
-    return xr.open_dataset(path, engine="scipy")
-
-
 def main() -> None:
-    dataset = open_test_dataset()
-    print("Opened dataset:", dataset.dims)
 
-    start = datetime(2026, 2, 27, 0, 0)
-    hours = [start + timedelta(hours=index) for index in range(49)]
+    data = xr.open_dataset("test/test_data.nc")
 
-    temperature = [10 + 2.5 * sin(index / 4) + 1.2 * cos(index / 2.5) for index in range(49)]
-    dew_point = [value - (8 + 1.5 * sin(index / 3)) for index, value in enumerate(temperature)]
-    humidity = [42 - 7 * sin(index / 5) - 3 * cos(index / 2.8) for index in range(49)]
-    wind_speed = [2.5 + 1.1 * sin(index / 6) - 0.6 * cos(index / 2.2) for index in range(49)]
-    wind_gust = [value + 1.4 + 0.8 * sin(index / 4.2) for index, value in enumerate(wind_speed)]
-    wind_direction = [(220 + 35 * sin(index / 4.5) - 70 * cos(index / 9.0)) % 360 for index in range(49)]
+    times = data.time.values
+
+    # lat/lon selection
+    lat_sel = 39.0
+    lon_sel = 16.0
+
+    lats = data.latitude.values
+    lons = data.longitude.values
+
+    # lats and lons are 2D, I want row, col indices of the point closest to lat_sel/lon_sel
+    lat_diff = lats - lat_sel
+    lon_diff = lons - lon_sel
+    distance = (lat_diff**2 + lon_diff**2) ** 0.5
+    row, col = np.unravel_index(distance.argmin(), distance.shape)
+    selected_lat = float(lats[row, col])
+    selected_lon = float(lons[row, col])
+
+    data_sel = data.sel(rows=row, cols=col)
+    temperature_k = data_sel['2t'].values
+    dew_point_k = data_sel['2d'].values
+    temperature = temperature_k - 273.15
+    dew_point = dew_point_k - 273.15
+    humidity = data_sel['rh'].values
+    wind_10u = data_sel['10u'].values
+    wind_10v = data_sel['10v'].values
+    wind_speed = np.sqrt(wind_10u**2 + wind_10v**2)
+    wind_direction = np.arctan2(wind_10v, wind_10u) * 180 / np.pi + 180
+    wind_arrow_level = np.full_like(wind_speed, wind_speed.max() * 1.08)
+
 
     builder = MeteogramBuilder(
-        hours,
-        title="Latitude: XXX, Longitude: YYY",
+        times,
+        title=f"Latitude: {selected_lat}, Longitude: {selected_lon}",
         height_per_panel=230,
     )
     builder.extend(
@@ -62,18 +79,31 @@ def main() -> None:
             PanelSpec(
                 title="Wind",
                 yaxis_title="m/s",
+                yaxis_range=[0, float(wind_speed.max() * 1.18)],
                 series=[
                     SeriesSpec(
                         "Wind Speed (10m)",
                         wind_speed,
                         line={"color": "#2ecc71", "width": 2}),
+                    SeriesSpec(
+                        "Wind Direction (10m)",
+                        wind_arrow_level,
+                        mode="markers",
+                        marker={
+                            "symbol": "arrow",
+                            "size": 12,
+                            "color": "#2d3436",
+                            "line": {"width": 1, "color": "#2d3436"},
+                        },
+                        marker_angles=wind_direction,
+                        showlegend=False,
+                        trace_kwargs={
+                            "hovertemplate": "%{x}<br>Speed: %{customdata[0]:.1f} m/s<br>"
+                            "Direction: %{customdata[1]:.0f}°<extra></extra>",
+                            "customdata": np.column_stack((wind_speed, wind_direction)).tolist(),
+                        },
+                    ),
                 ],
-            ),
-            create_wind_direction_panel(
-                hours,
-                wind_direction,
-                title="Wind Direction",
-                hover_label="Direction (deg)",
             ),
         ]
     )
