@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from typing import Any, Iterable, Mapping, Optional, Sequence, Tuple
 
 import plotly.graph_objects as go
@@ -72,12 +73,26 @@ class PanelSpec:
     hide_yaxis: bool = False
 
 
+@dataclass
+class TimeBandSpec:
+    """Vertical background band applied to selected hours of the day."""
+
+    start_hour: int
+    end_hour: int
+    fillcolor: str
+    opacity: float = 0.12
+    rows: Optional[Sequence[int]] = None
+    line_width: int = 0
+
+
 def create_subplot(
     x: Sequence[Any],
     panel: PanelSpec,
     *,
     template: str = "plotly_white",
     xaxis_title: str = "Time",
+    time_bands: Optional[Sequence["TimeBandSpec"]] = None,
+    now_time: Optional[Any] = None,
 ):
     """Create a single subplot figure from one panel definition."""
     _validate_panel_lengths(x, panel)
@@ -90,7 +105,10 @@ def create_subplot(
         template=template,
         panel_count=1,
         xaxis_title=xaxis_title,
+        x=x,
     )
+    _add_time_bands(figure, x=x, panel_count=1, time_bands=time_bands)
+    _add_now_line(figure, panel_count=1, now_time=now_time)
     return figure
 
 
@@ -105,6 +123,8 @@ def create_meteogram(
     row_spacing: float = 0.05,
     xaxis_title: str = "Time",
     legend: Optional[Mapping[str, Any]] = None,
+    time_bands: Optional[Sequence["TimeBandSpec"]] = None,
+    now_time: Optional[Any] = None,
 ):
     """Compose multiple panel definitions into one meteogram figure."""
     if not panels:
@@ -135,7 +155,10 @@ def create_meteogram(
         width=width,
         height=height_per_panel * len(panels),
         legend=legend,
+        x=x,
     )
+    _add_time_bands(figure, x=x, panel_count=len(panels), time_bands=time_bands)
+    _add_now_line(figure, panel_count=len(panels), now_time=now_time)
     return figure
 
 
@@ -199,9 +222,11 @@ class MeteogramBuilder:
         template: str = "plotly_white",
         width: int = 1100,
         height_per_panel: int = 220,
-        row_spacing: float = 0.05,
+        row_spacing: float = 0.08,
         xaxis_title: str = "Time",
         legend: Optional[Mapping[str, Any]] = None,
+        time_bands: Optional[Sequence["TimeBandSpec"]] = None,
+        now_time: Optional[Any] = None,
     ) -> None:
         self.x = x
         self.title = title
@@ -211,6 +236,8 @@ class MeteogramBuilder:
         self.row_spacing = row_spacing
         self.xaxis_title = xaxis_title
         self.legend = legend
+        self.time_bands = time_bands
+        self.now_time = now_time
         self._panels = []
 
     def add_panel(self, panel):
@@ -238,6 +265,8 @@ class MeteogramBuilder:
             row_spacing=self.row_spacing,
             xaxis_title=self.xaxis_title,
             legend=self.legend,
+            time_bands=self.time_bands,
+            now_time=self.now_time,
         )
 
 
@@ -276,6 +305,7 @@ def _add_panel_to_figure(figure, **kwargs):
         figure.update_yaxes(
             title_text=panel.secondary_y_title,
             range=panel.secondary_y_range,
+            showgrid=False,
             row=row,
             col=1,
             secondary_y=True,
@@ -289,10 +319,12 @@ def _style_figure(
     template: str,
     panel_count: int,
     xaxis_title: str,
+    x: Sequence[Any],
     width: int = 1100,
     height: int = 320,
     legend: Optional[Mapping[str, Any]] = None,
 ) -> None:
+    x_values = list(x)
     figure.update_layout(
         template=template,
         title=title_text,
@@ -302,11 +334,154 @@ def _style_figure(
         legend=legend or {
             "orientation": "h",
             "yanchor": "bottom",
-            "y": 1.02,
+            "y": 1.08,
             "xanchor": "left",
             "x": 0,
         },
-        margin={"l": 70, "r": 70, "t": 90, "b": 60},
+        margin={"l": 70, "r": 70, "t": 120, "b": 60},
     )
-    figure.update_xaxes(showgrid=True, title_text=xaxis_title, row=panel_count, col=1)
-    figure.update_yaxes(showgrid=True, zeroline=False)
+    figure.update_xaxes(
+        showgrid=True,
+        showline=True,
+        mirror=True,
+        linecolor="#444444",
+        linewidth=1,
+        range=[x_values[0], x_values[-1]],
+    )
+    figure.update_xaxes(title_text=xaxis_title, row=panel_count, col=1)
+    figure.update_yaxes(
+        showgrid=True,
+        zeroline=False,
+        showline=True,
+        mirror=True,
+        linecolor="#444444",
+        linewidth=1,
+    )
+    _style_secondary_yaxes(figure)
+
+
+def _add_time_bands(figure, x, panel_count, time_bands):
+    if not time_bands:
+        return
+
+    datetimes = [_coerce_datetime(value) for value in x]
+    if not datetimes:
+        return
+
+    edges = _datetime_edges(datetimes)
+    for band in time_bands:
+        intervals = _band_intervals(datetimes, edges, band)
+        if not intervals:
+            continue
+
+        rows = list(band.rows) if band.rows is not None else list(range(1, panel_count + 1))
+        for row in rows:
+            for x0, x1 in intervals:
+                figure.add_vrect(
+                    x0=x0,
+                    x1=x1,
+                    fillcolor=band.fillcolor,
+                    opacity=band.opacity,
+                    line_width=band.line_width,
+                    layer="below",
+                    row=row,
+                    col=1,
+                )
+
+
+def _band_intervals(datetimes, edges, band):
+    intervals = []
+    start_index = None
+
+    for index, moment in enumerate(datetimes):
+        if _hour_in_band(moment.hour, band.start_hour, band.end_hour):
+            if start_index is None:
+                start_index = index
+        elif start_index is not None:
+            intervals.append((edges[start_index], edges[index]))
+            start_index = None
+
+    if start_index is not None:
+        intervals.append((edges[start_index], edges[-1]))
+
+    return intervals
+
+
+def _datetime_edges(datetimes):
+    if len(datetimes) == 1:
+        return [
+            datetimes[0] - timedelta(minutes=30),
+            datetimes[0] + timedelta(minutes=30),
+        ]
+
+    edges = [datetimes[0] - (datetimes[1] - datetimes[0]) / 2]
+    for index in range(len(datetimes) - 1):
+        edges.append(datetimes[index] + (datetimes[index + 1] - datetimes[index]) / 2)
+    edges.append(datetimes[-1] + (datetimes[-1] - datetimes[-2]) / 2)
+    return edges
+
+
+def _hour_in_band(hour, start_hour, end_hour):
+    if start_hour == end_hour:
+        return True
+    if start_hour < end_hour:
+        return start_hour <= hour < end_hour
+    return hour >= start_hour or hour < end_hour
+
+
+def _coerce_datetime(value):
+    if isinstance(value, datetime):
+        return value
+
+    to_pydatetime = getattr(value, "to_pydatetime", None)
+    if callable(to_pydatetime):
+        converted = to_pydatetime()
+        if isinstance(converted, datetime):
+            return converted
+
+    iso_value = str(value).replace("Z", "+00:00")
+    if "T" not in iso_value and " " in iso_value:
+        iso_value = iso_value.replace(" ", "T", 1)
+    if "." in iso_value:
+        prefix, suffix = iso_value.split(".", 1)
+        timezone = ""
+        if "+" in suffix:
+            fraction, timezone = suffix.split("+", 1)
+            timezone = "+" + timezone
+        elif "-" in suffix:
+            fraction, timezone = suffix.split("-", 1)
+            timezone = "-" + timezone
+        else:
+            fraction = suffix
+        iso_value = prefix + "." + fraction[:6] + timezone
+    return datetime.fromisoformat(iso_value)
+
+
+def _style_secondary_yaxes(figure):
+    for axis_name in figure.layout:
+        if not axis_name.startswith("yaxis"):
+            continue
+
+        axis = figure.layout[axis_name]
+        if getattr(axis, "overlaying", None):
+            axis.showgrid = False
+            axis.showline = True
+            axis.mirror = True
+            axis.linecolor = "#444444"
+            axis.linewidth = 1
+
+
+def _add_now_line(figure, panel_count, now_time):
+    if now_time is None:
+        return
+
+    x_value = _coerce_datetime(now_time)
+    for row in range(1, panel_count + 1):
+        figure.add_vline(
+            x=x_value,
+            line_color="#111111",
+            line_width=1.5,
+            line_dash="dash",
+            row=row,
+            col=1,
+        )

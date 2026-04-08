@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from math import cos, sin
 import numpy as np
 import xarray as xr
-from meteogram import MeteogramBuilder, PanelSpec, SeriesSpec
+from meteogram import MeteogramBuilder, PanelSpec, SeriesSpec, TimeBandSpec
 
 # %%
 def main() -> None:
@@ -41,12 +41,25 @@ def main() -> None:
     wind_direction = np.arctan2(wind_10v, wind_10u) * 180 / np.pi + 180
     wind_arrow_level = np.full_like(wind_speed, wind_speed.max() * 1.08)
 
+    time_now = datetime(2026, 2, 28, 18)
 
     builder = MeteogramBuilder(
         times,
         title=f"Latitude: {selected_lat:.5f}, Longitude: {selected_lon:.5f}",
+        xaxis_title="Time (UTC)",
         height_per_panel=230,
+        row_spacing=0.1,
+        now_time=time_now,
+        time_bands=[
+            TimeBandSpec(
+                start_hour=18,
+                end_hour=6,
+                fillcolor="rgba(52, 73, 94, 1.0)",
+                opacity=0.10,
+            ),
+        ],
     )
+
     builder.extend(
         [
             PanelSpec(
