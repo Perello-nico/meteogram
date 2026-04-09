@@ -673,12 +673,12 @@ def wind_panel(
                         mode="markers",
                         marker={
                             "symbol": "arrow",
-                            "size": 12,
+                            "size": 10,
                             "color": color_wd,
                             "line": {"width": 1, "color": color_wd},
                         },
                         marker_angles=wind_direction,
-                        showlegend=True,
+                        showlegend=False,  # NOT IN THE LEGEND
                         trace_kwargs={
                             # information for the hover tooltip
                             "hovertemplate": f"%{{customdata:.0f}} {um_wd}",
