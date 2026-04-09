@@ -407,6 +407,20 @@ def _add_now_line(figure, panel_count, now_time):
     if now_time is None:
         return
 
+    figure.add_trace(
+        go.Scatter(
+            x=[None],
+            y=[None],
+            mode="lines",
+            name="Now",
+            line={"color": "#111111", "width": 1.5, "dash": "dash"},
+            hoverinfo="skip",
+            showlegend=True,
+        ),
+        row=1,
+        col=1,
+    )
+
     x_value = _coerce_datetime(now_time)
     for row in range(1, panel_count + 1):
         figure.add_vline(
@@ -483,6 +497,18 @@ def t_rh_panel(
         um_rh: str = UM_RH,
 ) -> PanelSpec:
     """Definition of the temperature and relative humidity panel."""
+
+    t_max = max(temperature)*1.18
+    t_min = min(temperature)*0.82
+    if dew_point is not None:
+        td_max = max(dew_point)*1.18
+        td_min = min(dew_point)*0.82
+    else:
+        td_max = t_max
+        td_min = t_min
+    y_t_max = max([t_max, td_max])
+    y_t_min = min([t_min, td_min])
+
     series = []
 
     rh_series = SeriesSpec(
@@ -530,6 +556,7 @@ def t_rh_panel(
     return PanelSpec(
                 title="Temperature and relative humidity",
                 yaxis_title=um_t,
+                yaxis_range=[y_t_min, y_t_max],
                 secondary_y_title=um_rh,
                 secondary_y_range=[0, 100],
                 series=series,
@@ -570,7 +597,7 @@ def wind_panel(
                             "line": {"width": 1, "color": color_wd},
                         },
                         marker_angles=wind_direction,
-                        showlegend=False,
+                        showlegend=True,
                         trace_kwargs={
                             # information for the hover tooltip
                             "hovertemplate": f"%{{customdata:.0f}} {um_wd}",

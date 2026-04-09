@@ -50,7 +50,6 @@ def main() -> None:
         humidity,
         wind_speed,
         wind_direction,
-        time_now,
         title='Meteogram'
     )
 
