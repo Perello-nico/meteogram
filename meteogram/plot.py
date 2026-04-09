@@ -239,6 +239,7 @@ def create_meteogram(
         x=x,
     )
     _add_time_bands(figure, x=x, panel_count=len(panels), time_bands=time_bands)
+    _add_midnight_lines(figure, x=x, panel_count=len(panels))
     _add_now_line(figure, panel_count=len(panels), now_time=now_time)
     return figure
 
@@ -418,6 +419,31 @@ def _add_now_line(figure, panel_count, now_time):
         )
 
 
+def _add_midnight_lines(figure, x, panel_count):
+    datetimes = [_coerce_datetime(value) for value in x]
+    midnight_times = []
+    for moment in datetimes:
+        if (
+            moment.hour == 0
+            and moment.minute == 0
+            and moment.second == 0
+            and moment.microsecond == 0
+        ):
+            midnight_times.append(moment)
+
+    for x_value in midnight_times:
+        for row in range(1, panel_count + 1):
+            figure.add_vline(
+                x=x_value,
+                line_color="#111111",
+                opacity=0.2,
+                line_dash="dot",
+                line_width=1.8,
+                row=row,
+                col=1,
+            )
+
+
 #####################################################################
 # PLOT SETTINGS
 #####################################################################
@@ -458,17 +484,6 @@ def t_rh_panel(
 ) -> PanelSpec:
     """Definition of the temperature and relative humidity panel."""
     series = []
-    t_series = SeriesSpec(
-                    "Temperature",
-                    temperature,
-                    line={"color": color_t, "width": WIDTH_LINE},
-                    trace_kwargs={
-                        # information for the hover tooltip
-                        "hovertemplate": f"%{{customdata:.1f}} {um_t}",
-                        "customdata": temperature,
-                    }
-                )
-    series.append(t_series)
 
     rh_series = SeriesSpec(
                     "Relative Humidity",
@@ -486,6 +501,18 @@ def t_rh_panel(
                     },
                 )
     series.append(rh_series)
+
+    t_series = SeriesSpec(
+                    "Temperature",
+                    temperature,
+                    line={"color": color_t, "width": WIDTH_LINE},
+                    trace_kwargs={
+                        # information for the hover tooltip
+                        "hovertemplate": f"%{{customdata:.1f}} {um_t}",
+                        "customdata": temperature,
+                    }
+                )
+    series.append(t_series)
 
     if dew_point is not None:
         td_series = SeriesSpec(
