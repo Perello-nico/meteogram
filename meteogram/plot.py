@@ -466,9 +466,10 @@ WIDTH_LINE = 2
 
 COLOR_T = "#ff3b30"
 COLOR_TD = "#9b6bd6"
-COLOR_RH = "rgba(46, 134, 222, 0.30)"
+COLOR_RH = "#0c53e0"
+
 COLOR_WS = "#2ecc71"
-COLOR_WD = "#2d3436"
+COLOR_WD = "#1b1e1b"
 
 UM_T = "°C"
 UM_RH = "%"
@@ -514,18 +515,15 @@ def t_rh_panel(
     rh_series = SeriesSpec(
                     "Relative Humidity",
                     humidity,
-                    line={"color": color_rh, "width": WIDTH_LINE},
-                    opacity=0.0,  # invisible line
-                    fill="tozeroy",
-                    fillcolor=color_rh,
+                    line={"color": color_rh, "width": WIDTH_LINE, "dash":"dot"},
                     secondary_y=True,
-                    render_order=-1,  # BACKGROUND
                     trace_kwargs={
                         # information for the hover tooltip
                         "hovertemplate": f"%{{customdata:.1f}} {um_rh}",
                         "customdata": humidity,
                     },
                 )
+
     series.append(rh_series)
 
     t_series = SeriesSpec(
@@ -559,6 +557,89 @@ def t_rh_panel(
                 yaxis_range=[y_t_min, y_t_max],
                 secondary_y_title=um_rh,
                 secondary_y_range=[0, 100],
+                series=series,
+            )
+
+def t_panel(
+        temperature: Sequence[Any],
+        dew_point: Optional[Sequence[Any]] = None,
+        color_t: str = COLOR_T,
+        color_td: str = COLOR_TD,
+        um_t: str = UM_T,
+) -> PanelSpec:
+    """Definition of the temperature panel."""
+
+    t_max = max(temperature)*1.18
+    t_min = min(temperature)*0.82
+    if dew_point is not None:
+        td_max = max(dew_point)*1.18
+        td_min = min(dew_point)*0.82
+    else:
+        td_max = t_max
+        td_min = t_min
+    y_t_max = max([t_max, td_max])
+    y_t_min = min([t_min, td_min])
+
+    series = []
+
+    t_series = SeriesSpec(
+                    "Temperature",
+                    temperature,
+                    line={"color": color_t, "width": WIDTH_LINE},
+                    trace_kwargs={
+                        # information for the hover tooltip
+                        "hovertemplate": f"%{{customdata:.1f}} {um_t}",
+                        "customdata": temperature,
+                    }
+                )
+    series.append(t_series)
+
+    if dew_point is not None:
+        td_series = SeriesSpec(
+                        "Dew Point",
+                        dew_point,
+                        line={"color": color_td, "width": WIDTH_LINE},
+                        trace_kwargs={
+                            # information for the hover tooltip
+                            "hovertemplate": f"%{{customdata:.1f}} {um_t}",
+                            "customdata": dew_point,
+                        },
+                    )
+        series.append(td_series)
+
+    return PanelSpec(
+                title="Temperature",
+                yaxis_title=um_t,
+                yaxis_range=[y_t_min, y_t_max],
+                series=series,
+            )
+
+
+def rh_panel(
+        humidity: Sequence[Any],
+        color_rh: str = COLOR_RH,
+        um_rh: str = UM_RH,
+) -> PanelSpec:
+    """Definition of relative humidity panel."""
+
+    series = []
+
+    rh_series = SeriesSpec(
+                    "Relative Humidity",
+                    humidity,
+                    line={"color": color_rh, "width": WIDTH_LINE},
+                    trace_kwargs={
+                        # information for the hover tooltip
+                        "hovertemplate": f"%{{customdata:.1f}} {um_rh}",
+                        "customdata": humidity,
+                    },
+                )
+    series.append(rh_series)
+
+    return PanelSpec(
+                title="Relative Humidity",
+                yaxis_title=um_rh,
+                yaxis_range=[0, 100],
                 series=series,
             )
 
