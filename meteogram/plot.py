@@ -424,6 +424,23 @@ def _add_now_line(figure, panel_count, now_time):
 
 WIDTH_LINE = 2
 
+COLOR_T = "#ff3b30"
+COLOR_TD = "#9b6bd6"
+COLOR_RH = "rgba(46, 134, 222, 0.30)"
+COLOR_WS = "#2ecc71"
+COLOR_WD = "#2d3436"
+
+UM_T = "°C"
+UM_RH = "%"
+UM_WS = "m/s"
+UM_WD = "°"
+
+NIGHT_TIME = [18, 6]
+COLOR_NIGHT = "#95a0a4"
+
+DAY_TIME = [6, 18]
+COLOR_DAY = "#ffffff"
+
 #####################################################################
 # PLOT FUNCTIONS
 #####################################################################
@@ -433,11 +450,11 @@ def t_rh_panel(
         temperature: Sequence[Any],
         humidity: Sequence[Any],
         dew_point: Optional[Sequence[Any]] = None,
-        color_t: str = "#ff3b30",
-        color_td: str = "#9b6bd6",
-        color_rh: str = "rgba(46, 134, 222, 0.20)",
-        um_t: str = "°C",
-        um_rh: str = "%",
+        color_t: str = COLOR_T,
+        color_td: str = COLOR_TD,
+        color_rh: str = COLOR_RH,
+        um_t: str = UM_T,
+        um_rh: str = UM_RH,
 ) -> PanelSpec:
     """Definition of the temperature and relative humidity panel."""
     series = []
@@ -495,10 +512,10 @@ def t_rh_panel(
 def wind_panel(
         wind_speed: Sequence[Any],
         wind_direction: Optional[Sequence[Any]] = None,
-        color_ws: str = "#2ecc71",
-        color_wd: str = "#2d3436",
-        um_ws: str = "m/s",
-        um_wd: str = "°"
+        color_ws: str = COLOR_WS,
+        color_wd: str = COLOR_WD,
+        um_ws: str = UM_WS,
+        um_wd: str = UM_WD
 ) -> PanelSpec: 
     """Definition of wind panel"""
     series = []   
@@ -549,8 +566,28 @@ def plot_meteogram(
         wind_speed,
         wind_direction,
         time_now=None,
-        title: str = 'Meteogram'
+        title='Meteogram',
+        nighttime=NIGHT_TIME,
+        daytime=DAY_TIME,
+        night_color=COLOR_NIGHT,
+        day_color=COLOR_DAY
 ):
+    
+    # time bands
+    night_band = TimeBandSpec(
+                    start_hour=nighttime[0],
+                    end_hour=nighttime[1],
+                    fillcolor=night_color,
+                    opacity=0.10,
+                )
+    day_band = TimeBandSpec(
+                    start_hour=daytime[0],
+                    end_hour=daytime[1],
+                    fillcolor=day_color,
+                    opacity=0.10,
+                )
+    time_bands = [night_band, day_band]
+
     # generate frame
     builder = MeteogramBuilder(
         times,
@@ -559,14 +596,7 @@ def plot_meteogram(
         height_per_panel=230,
         row_spacing=0.1,
         now_time=time_now,
-        time_bands=[
-            TimeBandSpec(
-                start_hour=18,
-                end_hour=6,
-                fillcolor="rgba(52, 73, 94, 1.0)",
-                opacity=0.10,
-            ),
-        ],
+        time_bands=time_bands,
     )
     
     # generate panels
