@@ -1,10 +1,17 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+import numpy as np
 from typing import Any, Iterable, Mapping, Optional, Sequence, Tuple
 
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+
+#####################################################################
+# OBJECTS AND UTILS FOR BUILDING A METEOGRAM FIGURE
+#####################################################################
 
 @dataclass
 class SeriesSpec:
@@ -84,132 +91,6 @@ class TimeBandSpec:
     rows: Optional[Sequence[int]] = None
     line_width: int = 0
 
-
-def create_subplot(
-    x: Sequence[Any],
-    panel: PanelSpec,
-    *,
-    template: str = "plotly_white",
-    xaxis_title: str = "Time",
-    time_bands: Optional[Sequence["TimeBandSpec"]] = None,
-    now_time: Optional[Any] = None,
-):
-    """Create a single subplot figure from one panel definition."""
-    _validate_panel_lengths(x, panel)
-
-    figure = make_subplots(specs=[[{"secondary_y": _panel_uses_secondary_y(panel)}]])
-    _add_panel_to_figure(figure, x=x, panel=panel, row=1)
-    _style_figure(
-        figure,
-        title_text=panel.title,
-        template=template,
-        panel_count=1,
-        xaxis_title=xaxis_title,
-        x=x,
-    )
-    _add_time_bands(figure, x=x, panel_count=1, time_bands=time_bands)
-    _add_now_line(figure, panel_count=1, now_time=now_time)
-    return figure
-
-
-def create_meteogram(
-    x: Sequence[Any],
-    panels: Sequence[PanelSpec],
-    *,
-    title: Optional[str] = None,
-    template: str = "plotly_white",
-    width: int = 1100,
-    height_per_panel: int = 220,
-    row_spacing: float = 0.05,
-    xaxis_title: str = "Time",
-    legend: Optional[Mapping[str, Any]] = None,
-    time_bands: Optional[Sequence["TimeBandSpec"]] = None,
-    now_time: Optional[Any] = None,
-):
-    """Compose multiple panel definitions into one meteogram figure."""
-    if not panels:
-        raise ValueError("At least one panel is required to create a meteogram.")
-
-    for panel in panels:
-        _validate_panel_lengths(x, panel)
-
-    figure = make_subplots(
-        rows=len(panels),
-        cols=1,
-        shared_xaxes=True,
-        vertical_spacing=row_spacing,
-        row_heights=[panel.height_ratio for panel in panels],
-        specs=[[{"secondary_y": _panel_uses_secondary_y(panel)}] for panel in panels],
-        subplot_titles=[panel.title for panel in panels],
-    )
-
-    for index, panel in enumerate(panels, start=1):
-        _add_panel_to_figure(figure, x=x, panel=panel, row=index)
-
-    _style_figure(
-        figure,
-        title_text=title,
-        template=template,
-        panel_count=len(panels),
-        xaxis_title=xaxis_title,
-        width=width,
-        height=height_per_panel * len(panels),
-        legend=legend,
-        x=x,
-    )
-    _add_time_bands(figure, x=x, panel_count=len(panels), time_bands=time_bands)
-    _add_now_line(figure, panel_count=len(panels), now_time=now_time)
-    return figure
-
-
-def create_wind_direction_panel(
-    x: Sequence[Any],
-    directions: Sequence[float],
-    *,
-    name: str = "Wind Direction (10m)",
-    title: str = "Wind Direction",
-    height_ratio: float = 0.35,
-    marker: Optional[Mapping[str, Any]] = None,
-    hover_values: Optional[Sequence[Any]] = None,
-    hover_label: str = "Direction",
-):
-    """Create a compact panel with rotated arrow markers for wind direction."""
-    if len(directions) != len(x):
-        raise ValueError(
-            "Wind direction series must have the same number of points as the x-axis."
-        )
-
-    base_marker = {
-        "symbol": "arrow",
-        "size": 14,
-        "color": "#333333",
-        "angle": list(directions),
-        "line": {"width": 1, "color": "#333333"},
-    }
-    if marker:
-        base_marker.update(marker)
-
-    trace_kwargs = {
-        "hovertemplate": "%{x}<br>" + hover_label + ": %{customdata}<extra></extra>",
-        "customdata": list(hover_values) if hover_values is not None else list(directions),
-    }
-
-    return PanelSpec(
-        title=title,
-        yaxis_range=[-1, 1],
-        height_ratio=height_ratio,
-        hide_yaxis=True,
-        series=[
-            SeriesSpec(
-                name=name,
-                values=[0] * len(x),
-                mode="markers",
-                marker=base_marker,
-                trace_kwargs=trace_kwargs,
-                showlegend=False,
-            )
-        ],
-    )
 
 class MeteogramBuilder:
     """Incrementally build a meteogram figure."""
@@ -310,6 +191,56 @@ def _add_panel_to_figure(figure, **kwargs):
             col=1,
             secondary_y=True,
         )
+
+
+def create_meteogram(
+    x: Sequence[Any],
+    panels: Sequence[PanelSpec],
+    *,
+    title: Optional[str] = None,
+    template: str = "plotly_white",
+    width: int = 1100,
+    height_per_panel: int = 220,
+    row_spacing: float = 0.05,
+    xaxis_title: str = "Time",
+    legend: Optional[Mapping[str, Any]] = None,
+    time_bands: Optional[Sequence["TimeBandSpec"]] = None,
+    now_time: Optional[Any] = None,
+):
+    """Compose multiple panel definitions into one meteogram figure."""
+    if not panels:
+        raise ValueError("At least one panel is required to create a meteogram.")
+
+    for panel in panels:
+        _validate_panel_lengths(x, panel)
+
+    figure = make_subplots(
+        rows=len(panels),
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=row_spacing,
+        row_heights=[panel.height_ratio for panel in panels],
+        specs=[[{"secondary_y": _panel_uses_secondary_y(panel)}] for panel in panels],
+        subplot_titles=[panel.title for panel in panels],
+    )
+
+    for index, panel in enumerate(panels, start=1):
+        _add_panel_to_figure(figure, x=x, panel=panel, row=index)
+
+    _style_figure(
+        figure,
+        title_text=title,
+        template=template,
+        panel_count=len(panels),
+        xaxis_title=xaxis_title,
+        width=width,
+        height=height_per_panel * len(panels),
+        legend=legend,
+        x=x,
+    )
+    _add_time_bands(figure, x=x, panel_count=len(panels), time_bands=time_bands)
+    _add_now_line(figure, panel_count=len(panels), now_time=now_time)
+    return figure
 
 
 def _style_figure(
@@ -485,3 +416,178 @@ def _add_now_line(figure, panel_count, now_time):
             row=row,
             col=1,
         )
+
+
+#####################################################################
+# PLOT SETTINGS
+#####################################################################
+
+WIDTH_LINE = 2
+
+#####################################################################
+# PLOT FUNCTIONS
+#####################################################################
+
+
+def t_rh_panel(
+        temperature: Sequence[Any],
+        humidity: Sequence[Any],
+        dew_point: Optional[Sequence[Any]] = None,
+        color_t: str = "#ff3b30",
+        color_td: str = "#9b6bd6",
+        color_rh: str = "rgba(46, 134, 222, 0.20)",
+        um_t: str = "°C",
+        um_rh: str = "%",
+) -> PanelSpec:
+    """Definition of the temperature and relative humidity panel."""
+    series = []
+    t_series = SeriesSpec(
+                    "Temperature",
+                    temperature,
+                    line={"color": color_t, "width": WIDTH_LINE},
+                    trace_kwargs={
+                        # information for the hover tooltip
+                        "hovertemplate": f"%{{customdata:.1f}} {um_t}",
+                        "customdata": temperature,
+                    }
+                )
+    series.append(t_series)
+
+    rh_series = SeriesSpec(
+                    "Relative Humidity",
+                    humidity,
+                    line={"color": color_rh, "width": WIDTH_LINE},
+                    opacity=0.0,  # invisible line
+                    fill="tozeroy",
+                    fillcolor=color_rh,
+                    secondary_y=True,
+                    render_order=-1,  # BACKGROUND
+                    trace_kwargs={
+                        # information for the hover tooltip
+                        "hovertemplate": f"%{{customdata:.1f}} {um_rh}",
+                        "customdata": humidity,
+                    },
+                )
+    series.append(rh_series)
+
+    if dew_point is not None:
+        td_series = SeriesSpec(
+                        "Dew Point",
+                        dew_point,
+                        line={"color": color_td, "width": WIDTH_LINE},
+                        trace_kwargs={
+                            # information for the hover tooltip
+                            "hovertemplate": f"%{{customdata:.1f}} {um_t}",
+                            "customdata": dew_point,
+                        },
+                    )
+        series.append(td_series)
+
+    return PanelSpec(
+                title="Temperature and relative humidity",
+                yaxis_title=um_t,
+                secondary_y_title=um_rh,
+                secondary_y_range=[0, 100],
+                series=series,
+            )
+
+
+def wind_panel(
+        wind_speed: Sequence[Any],
+        wind_direction: Optional[Sequence[Any]] = None,
+        color_ws: str = "#2ecc71",
+        color_wd: str = "#2d3436",
+        um_ws: str = "m/s",
+        um_wd: str = "°"
+) -> PanelSpec: 
+    """Definition of wind panel"""
+    series = []   
+    ws_series = SeriesSpec(
+                    "Wind Speed",
+                    wind_speed,
+                    line={"color": color_ws, "width": WIDTH_LINE},
+                    trace_kwargs={
+                        # information for the hover tooltip
+                        "hovertemplate": f"%{{customdata:.1f}} {um_ws}",
+                        "customdata": wind_speed,
+                    }
+                )
+    series.append(ws_series)
+    if wind_direction is not None:
+        wind_arrow_level = np.full_like(wind_speed, max(wind_speed) * 1.08)
+        wd_series = SeriesSpec(
+                        "Wind Direction",
+                        wind_arrow_level,  # type: ignore
+                        mode="markers",
+                        marker={
+                            "symbol": "arrow",
+                            "size": 12,
+                            "color": color_wd,
+                            "line": {"width": 1, "color": color_wd},
+                        },
+                        marker_angles=wind_direction,
+                        showlegend=False,
+                        trace_kwargs={
+                            # information for the hover tooltip
+                            "hovertemplate": f"%{{customdata:.0f}} {um_wd}",
+                            "customdata": wind_direction,
+                        },
+                    )
+        series.append(wd_series)
+    return PanelSpec(
+                title="Wind",
+                yaxis_title=um_ws,
+                yaxis_range=[0, max(wind_speed) * 1.18],
+                series=series
+            )
+
+def plot_meteogram(
+        times,
+        temperature,
+        dew_point,
+        humidity,
+        wind_speed,
+        wind_direction,
+        time_now=None,
+        title: str = 'Meteogram'
+):
+    # generate frame
+    builder = MeteogramBuilder(
+        times,
+        title=title,
+        xaxis_title="Time (UTC)",
+        height_per_panel=230,
+        row_spacing=0.1,
+        now_time=time_now,
+        time_bands=[
+            TimeBandSpec(
+                start_hour=18,
+                end_hour=6,
+                fillcolor="rgba(52, 73, 94, 1.0)",
+                opacity=0.10,
+            ),
+        ],
+    )
+    
+    # generate panels
+    panel_t_rh = t_rh_panel(
+        temperature=temperature,
+        dew_point=dew_point,
+        humidity=humidity,
+    )
+
+    panel_wind = wind_panel(
+        wind_speed=wind_speed,
+        wind_direction=wind_direction
+    )
+
+    builder.extend(
+        [
+            panel_t_rh,
+            panel_wind
+        ]
+    )
+
+    figure = builder.to_figure()
+
+    return figure

@@ -3,9 +3,7 @@ from .plot import (
     PanelSpec,
     SeriesSpec,
     TimeBandSpec,
-    create_meteogram,
-    create_subplot,
-    create_wind_direction_panel,
+    plot_meteogram,
 )
 
 __all__ = [
@@ -13,7 +11,5 @@ __all__ = [
     "PanelSpec",
     "SeriesSpec",
     "TimeBandSpec",
-    "create_meteogram",
-    "create_subplot",
-    "create_wind_direction_panel",
+    "plot_meteogram"
 ]
