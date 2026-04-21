@@ -12,10 +12,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from drops2 import coverages
-from .settings import MAX_ITER_DROPS
-
-LOGGER = logging.getLogger(__name__)
-
+from .settings import MAX_ITER_DROPS, LOGGER
 
 # %% ###################################################
 # OBJECTS
@@ -472,7 +469,7 @@ def collect_data(
     models: List[dict[str, Any]],
     path_save: str,
     logger: logging.Logger | None = None,
-):
+) -> list[str]:
     logger = logger or LOGGER
 
     # information of the time range for the name of the output files
@@ -488,6 +485,7 @@ def collect_data(
     if len(models) == 0:
         raise ValueError('No models to collect.')
 
+    list_output_files = []
     for model_cfg in models:
         model = Model.from_dict(model_cfg)
         try:
@@ -507,7 +505,9 @@ def collect_data(
             logger.debug('Writing metadata: %s', path_metadata)
             metadata.to_csv(path_metadata, index=False)
             logger.info('Saved %s', model.id)
+            list_output_files.append(path_data)
         except Exception:
             logger.exception('Unhandled error while processing model=%s', model.id)
 
     logger.info('Collection completed')
+    return list_output_files

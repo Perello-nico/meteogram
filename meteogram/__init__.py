@@ -7,6 +7,7 @@ from .plot import (
 )
 from .collector import collect_data
 from .settings import *
+from .selector import EventsCollection, select_data
 
 __all__ = [
     "MeteogramBuilder",
@@ -15,4 +16,6 @@ __all__ = [
     "TimeBandSpec",
     "plot_meteogram",
     "collect_data",
+    "EventsCollection",
+    "select_data"
 ]

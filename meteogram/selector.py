@@ -1,5 +1,6 @@
 # %%
 from __future__ import annotations
+import logging
 
 import xarray as xr
 import pandas as pd
@@ -11,6 +12,7 @@ from typing import List, Dict, Optional
 from shapely.geometry import Point
 from datetime import datetime
 from pyproj import Transformer
+from .settings import LOGGER
 
 
 # %% #####################################################################
@@ -127,6 +129,12 @@ class EventsCollection():
             )
         return cls(collection=collection, key_id=key_id)
 
+    def timebox(self) -> tuple[datetime, datetime]:
+        """Find the min of time_from and max of time_to among events collection"""
+        time_from = min([event.time_from for event in self.collection.values()])
+        time_to = max([event.time_to for event in self.collection.values()])
+        return (time_from, time_to)
+
 
 # %% #################################################################
 # FUNCTIONS
@@ -165,9 +173,11 @@ def distance(
 def select_data_event(
     dataset: xr.Dataset,
     event: Event,
-    radius_km: float = -1
+    radius_km: float = -1,
+    logger: logging.Logger | None = None
 ) -> pd.DataFrame:
     """Data selection."""
+    logger = logger or LOGGER
     # Time selection
     time_from_select = event.time_from.replace(tzinfo=None)
     time_to_select = event.time_to.replace(tzinfo=None)
@@ -188,7 +198,7 @@ def select_data_event(
     # Find points within the specified max_distance_km
     mask = np.where(dist_km <= radius_km, True, False)
     if mask.sum() == 0:
-        raise ValueError(f"No points found.")
+        logger.error("No points found.")
     # Gather the corresponding data for these points
     variables = [var for var in dataset.data_vars]
     shape_out = dataset[variables[0]].values[:, mask][times_idx].shape
@@ -214,12 +224,17 @@ def select_data_event(
 def select_data(
     dataset: xr.Dataset,
     events: EventsCollection,
-    radius_km: float = -1
+    radius_km: float = -1,
+    logger: logging.Logger | None = None
 ) -> pd.DataFrame:
+    logger = logger or LOGGER
+
+    logger.info("data events extraction")
     # search for data
     df_result = pd.DataFrame()
     for id, event in events.collection.items():
-        df_tmp = select_data_event(dataset, event, radius_km)
+        logger.debug(f"extracting data for event {id}")
+        df_tmp = select_data_event(dataset, event, radius_km, logger)
         df_tmp.insert(0, events.key_id, id)
         df_result = pd.concat([df_result, df_tmp],
                               ignore_index=True)
