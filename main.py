@@ -4,16 +4,18 @@ from __future__ import annotations
 import os
 import sys
 import yaml
-from datetime import datetime, timedelta
-from math import cos, sin
-import numpy as np
-import xarray as xr
+from datetime import datetime
+from typing import Optional
 from meteogram.utils import setup_logger, open_drops_door
-from meteogram import plot_meteogram, collect_data
+from meteogram.collector import Model
+from meteogram import collect_data, EventsCollection, select_data, plot_meteogram
 
 # %%
 def main(
     path_config: str,
+    path_events: str,
+    time_from: Optional[datetime | str] = None,
+    time_to: Optional[datetime | str] = None,
 ) -> None:
 
     # load configuration file
@@ -35,57 +37,58 @@ def main(
     else:
         path_save_abs = os.path.abspath(os.path.join(path_config_dir, path_save))
     os.makedirs(path_save_abs, exist_ok=True)
+    save_temporary_data = config.get('save_temporary_data', False)
 
     # logging initialization
-    save_log = True
+    save_log = bool(config.get('log', False))
+    log_level = config.get('log_level', 'error')
+    log_name = config.get('log_name', 'meteogram')
     log_path = None
-    log_level = 'info'
-    log_name = 'meteogram.log'
-    log_config = config.get('log')
-    if log_config:
-        log_config = log_config[0]
-        save_log = bool(log_config.get('save', True))
-        log_level = log_config.get('level', 'info')
-        if save_log:
-            log_path = os.path.join(path_save_abs, log_name)
-    logger = setup_logger(log_path, log_level)
-    logger.info('Config: %s', path_config_abs)
-    logger.info('Output: %s', path_save_abs)
     if save_log:
-        logger.info('Log file: %s', log_path)
+        log_path = os.path.join(path_save_abs, f"{log_name}.log")
+    logger = setup_logger(log_path, log_level)
+
+    logger.info('config path: %s', path_config_abs)
+    logger.info('output path: %s', path_save_abs)
 
     # get models
-    models_list = config.get('models')
+    model_cfg_list = config.get('model', [])
+    if len(model_cfg_list) != 1:
+        logger.error('Too many models provided - currently only one model is supported')
+    model_cfg = model_cfg_list[0]
+
+    # create model
+    model = Model.from_dict(model_cfg)
 
     # open drops door
-    dds_config = config.get('dds')
-    if dds_config:
-        dds_config = dds_config[0]
-        url = dds_config.get('url')
-        user = dds_config.get('user')
-        password = dds_config.get('password')
-        if url and user and password:
-            open_drops_door(url, user, password)
-        else:
-            logger.warning('Incomplete DDS credentials provided, skipping DDS authentication')
+    url = config.get('dds_url')
+    user = config.get('dds_user')
+    password = config.get('dds_password')
+    if url and user and password:
+        open_drops_door(url, user, password)
     else:
-        logger.warning('DDS credentials not provided, skipping DDS authentication')
+        logger.warning('skipping DDS authentication')
 
-    # time test
-    time_from = '202604100000'
-    time_to = '202604101200'
+    # generate events
+    events = EventsCollection.from_csv(path_events, time_from, time_to)
 
-    collect_data(
-        time_from=time_from,
-        time_to=time_to,
-        models=models_list,  # type: ignore
-        path_save=path_save_abs,
+    time_from_sel, time_to_sel = events.timebox()
+
+    data, metadata = collect_data(
+        model=model,
+        time_from=time_from_sel,
+        time_to=time_to_sel,
         logger=logger,
     )
 
-    # data = xr.open_dataset("test/test_data.nc")
+    # select data in the event
+    data_selection = select_data(data, events)
 
-    # times = data.time.values
+    # save data
+    if save_temporary_data:
+        data.to_netcdf(os.path.join(path_save_abs, "data_model.nc"))    
+        metadata.to_csv(os.path.join(path_save_abs, "metadata.csv"), index=False)
+        data_selection.to_csv(os.path.join(path_save_abs, "data_selection.csv"), index=False)
 
     # # lat/lon selection
     # lat_sel = 39.0
@@ -132,4 +135,7 @@ def main(
 
 if __name__ == "__main__":
     path_config = sys.argv[1]
-    main(path_config=path_config)
+    path_events = sys.argv[2]
+    time_from = sys.argv[3]
+    time_to = sys.argv[4]
+    main(path_config, path_events, time_from, time_to)

@@ -56,7 +56,7 @@ class Variable():
             'id': self.id,
             'level': self.level,
             'label': self.label,
-            'description': self.description
+            'description': self.description if self.description is not None else '-'
         }
 
 
@@ -359,11 +359,10 @@ def collect_data(
         logger.warning('Skipping %s: no dates selected', model.id)
         return xr.Dataset(), pd.DataFrame(columns=columns_metadata)
 
-    # take available date_ref from most recent to oldest
-    date_ref_available = df_dates['date_ref'].sort_values(ascending=False).unique()
     if only_last_run:
-        # keep only the last date_ref for all time steps
-        df_dates = df_dates[df_dates['date_ref']==date_ref_available[0]]
+        # among the different date_ref for a time step, take only the most recent one
+        df_dates = df_dates.sort_values('date_ref', ascending=False).drop_duplicates(subset=['time', 'variable_id'], keep='first')
+        logger.debug('only_last_run=True > keeping only the most recent date_ref for each time step and variable')
 
     # take available variables
     vars_ok = df_dates['variable_id'].unique().tolist()
@@ -393,6 +392,8 @@ def collect_data(
         data_var = xr.Dataset()
         df_dates_var = df_dates.xs(variable.id, level='variable_id')
         times_var = df_dates_var.index.get_level_values('time').unique()
+        # order the times from oldest to most recent for the variable
+        times_var = times_var.sort_values()
 
         # selection of data for each time step
         for tt in times_var:
@@ -436,7 +437,7 @@ def collect_data(
                 else:
                     data_var = xr.concat([data_var, data_tmp],
                                          dim='time')
-                logger.info('Data extracted from date_ref=%s', date)
+                logger.info('time %s extracted from date_ref: %s', tt, date)
                 # add the metadata
                 df_metadata = pd.DataFrame({
                     'time': data_tmp['time'].values,
@@ -461,6 +462,7 @@ def collect_data(
         data = xr.merge([data, data_var], compat='no_conflicts')
         logger.debug('Merged %s:%s', model.id, variable.id)
     data.attrs.update(model.get_attrs())
+    metadata = metadata.sort_values(columns_metadata)
 
     # get how many time steps
     ntimes = len(data['time'])
@@ -481,7 +483,7 @@ if __name__ == '__main__':
         description='Test ICON'
     )
 
-    time_from = '202604240000'
+    time_from = '202604231800'
     time_to = '202604261800'
 
     df_dates = get_model_dates(model, time_from, time_to)
