@@ -22,19 +22,21 @@ from .settings import MAX_ITER_DROPS, LOGGER
 class Variable():
     id: str
     level: str | int
-    name: Optional[str] = None
+    label: Optional[str] = None
+    description: Optional[str] = None
 
     def __post_init__(self) -> None:
         # if another name is not given, use the id as name
-        if self.name is None:
-            self.name = self.id
+        if self.label is None:
+            self.label = self.id
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> 'Variable':
         return cls(
             id=data['id'],
-            name=data.get('name'),
-            level=data['level']
+            level=data['level'],
+            label=data.get('label'),
+            description=data.get('description')
         )
     
     @classmethod
@@ -47,13 +49,14 @@ class Variable():
         return cls.from_dict(data)
 
     def get_label(self) -> Optional[str]:
-        return self.name
+        return self.label
 
     def get_attrs(self) -> Dict[str, str | int | None]:
         return {
             'id': self.id,
-            'name': self.name,
-            'level': self.level
+            'level': self.level,
+            'label': self.label,
+            'description': self.description
         }
 
 
@@ -61,15 +64,16 @@ class Variable():
 class Model():
     id: str
     variables: List[Variable]
-    forecast: int  # hours
-    analysis: int  # hours
+    forecast_hours: int  # hours
+    analysis_hours: int  # hours
     runs: Optional[List[int]] = None  # hour
-    name: Optional[str] = None
+    label: Optional[str] = None
+    description: Optional[str] = None
 
     def __post_init__(self) -> None:
         # add the name of the model
-        if self.name is None:
-            self.name = self.id
+        if self.label is None:
+            self.label = self.id
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> 'Model':
@@ -79,10 +83,11 @@ class Model():
         ]
         return cls(
             id=data['id'],
-            name=data.get('name'),
+            label=data.get('label'),
+            description=data.get('description'),
             variables=variables,
-            forecast=data['forecast'],
-            analysis=data['analysis'],
+            forecast_hours=data['forecast_hours'],
+            analysis_hours=data['analysis_hours'],
             runs=data.get('runs')
         )
 
@@ -96,7 +101,7 @@ class Model():
         return cls.from_dict(data)
 
     def get_label(self) -> Optional[str]:
-        return self.name
+        return self.label
 
     def get_runs(self) -> List[int]:
         if self.runs is None:
@@ -105,11 +110,11 @@ class Model():
             runs = [int(rr) for rr in self.runs]
         return runs
 
-    def get_forecast(self) -> timedelta:
-        return timedelta(hours=self.forecast)
+    def get_forecast_hours(self) -> timedelta:
+        return timedelta(hours=self.forecast_hours)
 
-    def get_analysis(self) -> timedelta:
-        return timedelta(hours=self.analysis)
+    def get_analysis_hours(self) -> timedelta:
+        return timedelta(hours=self.analysis_hours)
 
     def get_variables(self) -> List[Variable]:
         return self.variables
@@ -117,9 +122,10 @@ class Model():
     def get_attrs(self) -> Dict[str, str | int | List[int] | None]:
         return {
             'id': self.id,
-            'name': self.name,
-            'forecast': self.forecast,
-            'analysis': self.analysis,
+            'label': self.label,
+            'description': self.description if self.description is not None else '-',
+            'forecast_hours': self.forecast_hours,
+            'analysis_hours': self.analysis_hours,
             'runs': self.runs if self.runs is not None else '-'
         }
 
@@ -207,12 +213,14 @@ def get_model_dates(
     model: Model,
     time_from: datetime | str,
     time_to: datetime | str,
-    logger: logging.Logger | None = None,
+    all_variables: bool = True,
+    logger: logging.Logger | None = None
 ) -> pd.DataFrame:
     """
     Get the available dates for a model in a given time range.
     """
     logger = logger or LOGGER
+
     # transform time to datetime
     if isinstance(time_from, str):
         time_from = datetime.strptime(time_from, '%Y%m%d%H%M')
@@ -232,31 +240,26 @@ def get_model_dates(
         time_to_sel = time_to.replace(tzinfo=tz)
     else:
         time_to_sel = time_to.astimezone(tz)
+
     # define the time for search
-    start_time = (time_from_sel - model.get_forecast()
-                  ).strftime('%Y%m%d%H%M')
-    stop_time = (time_to_sel + model.get_analysis()
-                 ).strftime('%Y%m%d%H%M')
-    logger.info('Checking dates for %s [%s, %s]', model.id, start_time, stop_time)
+    start_time = (time_from_sel - model.get_forecast_hours()).strftime('%Y%m%d%H%M')
+    stop_time = (time_to_sel + model.get_analysis_hours()).strftime('%Y%m%d%H%M')
+    logger.info('Checking dates for model:%s in [%s, %s]', model.id, start_time, stop_time)
     all_dates, check = insist(
                         coverages.get_dates,
                         logger=logger,
-                        action_name=f'get_dates model={model.id}',
+                        action_name=f'get_dates model:{model.id}',
                         data_id=model.id,
                         date_from=start_time,
                         date_to=stop_time)
+
     if not check:
-        logger.error(
-            'Unable to extract reference dates for model=%s',
-            model.id
-        )
+        logger.error('Unable to extract reference dates')
         return pd.DataFrame()
     if len(all_dates) == 0:  # type: ignore
-        logger.warning(
-            'No reference dates available for model=%s',
-            model.id
-        )
+        logger.warning('No reference dates available')
         return pd.DataFrame()
+
     # order the dates
     all_dates.sort(reverse=True)  # type: ignore 
     # clean the dates according to the runs
@@ -268,43 +271,32 @@ def get_model_dates(
         for date in all_dates:  # type: ignore
             if date.hour in runs:
                 all_dates_ok.append(date)
-        logger.debug('Filtered dates for %s with runs=%s: %s kept', model.id, runs, len(all_dates_ok))
+        logger.debug('Filtered dates with runs:%s > %s kept', runs, len(all_dates_ok))
+
+    # get data for each variable
     info_all = pd.DataFrame()
     for variable in model.get_variables():
-        logger.debug('Checking timeline for %s:%s', model.id, variable.id)
+        logger.debug('Checking timeline for variable:%s', variable.id)
         info_var = pd.DataFrame()
         for date in all_dates_ok:  # type: ignore
+            logger.debug('Extracting timeline for date_ref:%s', date)
             timeline, check = insist(
                                 coverages.get_timeline,
                                 logger=logger,
                                 action_name=(
                                     'get_timeline '
-                                    f'model={model.id} variable={variable.id} '
-                                    f'date_ref={date}'
+                                    f'model:{model.id} variable:{variable.id} date_ref:{date}'
                                 ),
                                 data_id=model.id,
                                 date_ref=date,
                                 variable=variable.id,
                                 level=variable.level)
             if not check:
-                logger.error(
-                    'Timeline extraction failed for model=%s variable=%s '
-                    'level=%s date_ref=%s',
-                    model.id,
-                    variable.id,
-                    variable.level,
-                    date
-                )
+                logger.error('Timeline extraction failed')
             if timeline is None:
-                logger.warning(
-                    'Empty timeline returned for model=%s variable=%s '
-                    'level=%s date_ref=%s',
-                    model.id,
-                    variable.id,
-                    variable.level,
-                    date
-                )
+                logger.warning('Empty timeline returned')
                 continue
+
             # select timeline that you need
             timeline = np.array(timeline)
             timeline_ok = timeline[np.where(
@@ -314,71 +306,101 @@ def get_model_dates(
                 df = pd.DataFrame({'time': timeline_ok})
                 df['date_ref'] = date
                 info_var = pd.concat([info_var, df])
+                logger.debug('Extracted %s times', len(timeline_ok))
+
         if len(info_var) == 0:
             logger.warning(
-                'No valid timeline found in range for model=%s variable=%s',
-                model.id,
-                variable.id
-            )
+                'No valid timeline found for variable:%s', variable.id)
+
         if len(info_var) > 0:
             info_var['variable_id'] = variable.id
             info_all = pd.concat([info_all, info_var])
+
+    if all_variables and len(info_all)>0:
+        logger.debug('all_variables=True',
+        '> Filtering timelines to keep only those with all variables available')        # take only the date_ref-time that contains all variables
+        date_ref_times = info_all.groupby(['date_ref', 'time']).size()
+        date_ref_times = date_ref_times[date_ref_times == len(model.get_variables())]
+        info_all = info_all[info_all.set_index(['date_ref', 'time']).index.isin(date_ref_times.index)]
+
     if len(info_all) == 0:
-        logger.warning(
-            'No timelines were collected for model=%s',
-            model.id
-        )
+        logger.warning('No timelines collected for model:%s', model.id)
         return pd.DataFrame()
-    cols = ['variable_id', 'time', 'date_ref']
+
+    cols = ['date_ref', 'time', 'variable_id']
     info_all = info_all[cols].sort_values(cols)
-    info_all = info_all.set_index(['variable_id', 'time'])
-    logger.info('Found %s timeline entries for %s', len(info_all), model.id)
     return info_all
 
 
-def get_model_data(
+def collect_data(
     model: Model,
     time_from: datetime | str,
     time_to: datetime | str,
-    round_time: bool = False,
+    round_time: bool = True,
     round_unit: str = 'hour',
-    logger: logging.Logger | None = None,
+    all_variables: bool = True,
+    only_last_run: bool = True,
+    logger: logging.Logger | None = None
 ) -> tuple[xr.Dataset, pd.DataFrame]:
     """Get model data"""
     logger = logger or LOGGER
     logger.info('Collecting %s', model.id)
+    columns_metadata = ['time', 'variable_id', 'model_id', 'date_ref']
+
     # get dates ref
     df_dates = get_model_dates(
         model=model,
         time_from=time_from,
         time_to=time_to,
-        logger=logger
+        logger=logger,
+        all_variables=all_variables
     )
     if df_dates.empty:
         logger.warning('Skipping %s: no dates selected', model.id)
-        return xr.Dataset(), pd.DataFrame(
-            columns=['variable', 'model_id', 'variable_id', 'time', 'date_ref']
-        )
-    vars_ok = df_dates.index.get_level_values('variable_id').unique().tolist()
+        return xr.Dataset(), pd.DataFrame(columns=columns_metadata)
+
+    # take available date_ref from most recent to oldest
+    date_ref_available = df_dates['date_ref'].sort_values(ascending=False).unique()
+    if only_last_run:
+        # keep only the last date_ref for all time steps
+        df_dates = df_dates[df_dates['date_ref']==date_ref_available[0]]
+
+    # take available variables
+    vars_ok = df_dates['variable_id'].unique().tolist()
+    if all_variables:
+        # we are sure that all time steps have all variables
+        # check that all variables are available
+        if len(vars_ok) < len(model.get_variables()):
+            logger.error('all_variables=True',
+                'Not all variables have timelines for model=%s. '
+                'Expected: %s, found: %s. Skipping model.',
+                model.id,
+                [variable.id for variable in model.get_variables()],
+                vars_ok
+            )
+            return xr.Dataset(), pd.DataFrame(columns=columns_metadata)
+
     # get the data
+    df_dates = df_dates.set_index(['variable_id', 'time'])
     data = xr.Dataset()
-    metadata = pd.DataFrame(
-        columns=['variable', 'model_id', 'variable_id', 'time', 'date_ref']
-    )
+    metadata = pd.DataFrame(columns=columns_metadata)
+
     for variable in model.get_variables():
+        logger.info('Extracting data for %s', variable.id)
         if variable.id not in vars_ok:
-            logger.warning('Skipping %s:%s, no timeline', model.id, variable.id)
+            logger.warning('Skipping variable:%s > no timeline', variable.id)
             continue
-        logger.info('Downloading %s: %s', model.id, variable.id)
         data_var = xr.Dataset()
         df_dates_var = df_dates.xs(variable.id, level='variable_id')
         times_var = df_dates_var.index.get_level_values('time').unique()
+
         # selection of data for each time step
         for tt in times_var:
             time_sel = tt.to_pydatetime()
+            # order the date_ref from most recent to oldest for the time step
             dates = df_dates_var.loc[tt:tt]['date_ref'].sort_values(ascending=False).tolist()
             search_date = True
-            logger.info('Selecting date for %s:%s at %s', model.id, variable.id, tt)
+            logger.debug('Searching date_ref for time %s', tt)
             while len(dates) > 0 and search_date:
                 date = dates.pop(0)
                 date = date.to_pydatetime().replace(tzinfo=None)
@@ -387,8 +409,8 @@ def get_model_data(
                     logger=logger,
                     action_name=(
                         'get_data '
-                        f'model={model.id} variable={variable.id} '
-                        f'time={tt} date_ref={date}'
+                        f'model:{model.id} variable:{variable.id} '
+                        f'time:{tt} date_ref:{date}'
                     ),
                     data_id=model.id,
                     date_ref=date,
@@ -397,23 +419,9 @@ def get_model_data(
                     date_selected=time_sel
                 )
                 if not check:
-                    logger.error(
-                        'Data extraction failed for model=%s variable=%s '
-                        'time=%s date_ref=%s',
-                        model.id,
-                        variable.id,
-                        tt,
-                        date
-                    )
+                    logger.error('Data extraction failed')
                 if data_tmp is None:
-                    logger.warning(
-                        'No data returned for model=%s variable=%s '
-                        'time=%s date_ref=%s',
-                        model.id,
-                        variable.id,
-                        tt,
-                        date
-                    )
+                    logger.warning('No data returned')
                     continue
                 search_date = False
                 if round_time:
@@ -428,86 +436,55 @@ def get_model_data(
                 else:
                     data_var = xr.concat([data_var, data_tmp],
                                          dim='time')
+                logger.info('Data extracted from date_ref=%s', date)
                 # add the metadata
                 df_metadata = pd.DataFrame({
-                    'variable': variable.name,
-                    'model_id': model.id,
-                    'variable_id': variable.id,
                     'time': data_tmp['time'].values,
+                    'variable_id': variable.id,
+                    'model_id': model.id,
                     'date_ref': data_tmp['date_ref'].values
                 })
                 metadata = pd.concat([metadata, df_metadata], ignore_index=True)
             if search_date:
-                logger.warning(
-                    'No usable data found for model=%s variable=%s time=%s',
-                    model.id,
-                    variable.id,
-                    tt
-                )
+                logger.warning('No usable data found for time:%s', tt)
+
         if len(data_var.data_vars) == 0:
-            logger.warning('Variable %s:%s produced no data', model.id, variable.id)
+            logger.warning('Variable %s produced no data', variable.id)
+            if all_variables:
+                logger.warning('Skipping model %s > all_variables=True', model.id)
+                return xr.Dataset(), pd.DataFrame(columns=columns_metadata)
             continue
-        # substitute with the variable name
-        data_var = data_var.rename_vars(
-                    {variable.id: variable.get_label()}
-                    )
+
         # add the attributes of the variable to the DataArray itself
-        var_name = variable.get_label()
-        if var_name is not None:
-            data_var[var_name].attrs.update(variable.get_attrs())
+        data_var[variable.id].attrs.update(variable.get_attrs())
         # merge all together
         data = xr.merge([data, data_var], compat='no_conflicts')
         logger.debug('Merged %s:%s', model.id, variable.id)
     data.attrs.update(model.get_attrs())
-    logger.info('Done %s: %s variables', model.id, len(data.data_vars))
+
+    # get how many time steps
+    ntimes = len(data['time'])
+    logger.info('Extracted data for %s: %s variables and %s times', model.id, len(data.data_vars), ntimes)
     return data, metadata
 
 
-def collect_data(
-    time_from: datetime | str,
-    time_to: datetime | str,
-    models: List[dict[str, Any]],
-    path_save: str,
-    logger: logging.Logger | None = None,
-) -> list[str]:
-    logger = logger or LOGGER
-
-    # information of the time range for the name of the output files
-    time_from_str = datetime.strftime(
-        pd.to_datetime(time_from).to_pydatetime(),
-        '%Y%m%d%H%M'
-    )
-    time_to_str = datetime.strftime(
-        pd.to_datetime(time_to).to_pydatetime(),
-        '%Y%m%d%H%M'
+# %%
+if __name__ == '__main__':
+    model = Model(
+        id='ICON_LAMI',
+        variables=[
+            Variable(id='2t', level='2.0', label='T', description='Temperature at 2m'),
+            Variable(id='rh', level='2.0', label='RH', description='Relative Humidity at 2m')
+        ],
+        forecast_hours=72,
+        analysis_hours=0,
+        description='Test ICON'
     )
 
-    if len(models) == 0:
-        raise ValueError('No models to collect.')
+    time_from = '202604240000'
+    time_to = '202604261800'
 
-    list_output_files = []
-    for model_cfg in models:
-        model = Model.from_dict(model_cfg)
-        try:
-            data, metadata = get_model_data(
-                model=model,
-                time_from=time_from,
-                time_to=time_to,
-                logger=logger
-            )
-            if len(data.data_vars) == 0:
-                logger.warning('No data for %s; writing empty outputs', model.id)
-            file_stub = f'{model.id}_{time_from_str}_{time_to_str}'
-            path_data = os.path.join(path_save, f'{file_stub}.nc')
-            path_metadata = os.path.join(path_save, f'{file_stub}_metadata.csv')
-            logger.debug('Writing NetCDF: %s', path_data)
-            data.to_netcdf(path_data)
-            logger.debug('Writing metadata: %s', path_metadata)
-            metadata.to_csv(path_metadata, index=False)
-            logger.info('Saved %s', model.id)
-            list_output_files.append(path_data)
-        except Exception:
-            logger.exception('Unhandled error while processing model=%s', model.id)
+    df_dates = get_model_dates(model, time_from, time_to)
 
-    logger.info('Collection completed')
-    return list_output_files
+    data, metadata = collect_data(model, time_from, time_to)
+# %%
