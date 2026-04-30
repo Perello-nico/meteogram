@@ -22,20 +22,13 @@ from .settings import MAX_ITER_DROPS, LOGGER
 class Variable():
     id: str
     level: str | int
-    label: Optional[str] = None
     description: Optional[str] = None
-
-    def __post_init__(self) -> None:
-        # if another name is not given, use the id as name
-        if self.label is None:
-            self.label = self.id
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> 'Variable':
         return cls(
             id=data['id'],
             level=data['level'],
-            label=data.get('label'),
             description=data.get('description')
         )
     
@@ -48,14 +41,10 @@ class Variable():
             data = yaml.safe_load(file)
         return cls.from_dict(data)
 
-    def get_label(self) -> Optional[str]:
-        return self.label
-
     def get_attrs(self) -> Dict[str, str | int | None]:
         return {
             'id': self.id,
             'level': self.level,
-            'label': self.label,
             'description': self.description if self.description is not None else '-'
         }
 
@@ -67,13 +56,7 @@ class Model():
     forecast_hours: int  # hours
     analysis_hours: int  # hours
     runs: Optional[List[int]] = None  # hour
-    label: Optional[str] = None
     description: Optional[str] = None
-
-    def __post_init__(self) -> None:
-        # add the name of the model
-        if self.label is None:
-            self.label = self.id
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> 'Model':
@@ -83,7 +66,6 @@ class Model():
         ]
         return cls(
             id=data['id'],
-            label=data.get('label'),
             description=data.get('description'),
             variables=variables,
             forecast_hours=data['forecast_hours'],
@@ -99,9 +81,6 @@ class Model():
         with open(path, 'r', encoding='utf-8') as file:
             data = yaml.safe_load(file)
         return cls.from_dict(data)
-
-    def get_label(self) -> Optional[str]:
-        return self.label
 
     def get_runs(self) -> List[int]:
         if self.runs is None:
@@ -122,7 +101,6 @@ class Model():
     def get_attrs(self) -> Dict[str, str | int | List[int] | None]:
         return {
             'id': self.id,
-            'label': self.label,
             'description': self.description if self.description is not None else '-',
             'forecast_hours': self.forecast_hours,
             'analysis_hours': self.analysis_hours,
@@ -463,6 +441,7 @@ def collect_data(
         logger.debug('Merged %s:%s', model.id, variable.id)
     data.attrs.update(model.get_attrs())
     metadata = metadata.sort_values(columns_metadata)
+    metadata = metadata.reset_index(drop=True)
 
     # get how many time steps
     ntimes = len(data['time'])
@@ -475,8 +454,8 @@ if __name__ == '__main__':
     model = Model(
         id='ICON_LAMI',
         variables=[
-            Variable(id='2t', level='2.0', label='T', description='Temperature at 2m'),
-            Variable(id='rh', level='2.0', label='RH', description='Relative Humidity at 2m')
+            Variable(id='2t', level='2.0', description='Temperature at 2m'),
+            Variable(id='rh', level='2.0', description='Relative Humidity at 2m')
         ],
         forecast_hours=72,
         analysis_hours=0,

@@ -2,6 +2,10 @@
 import logging
 import os
 import drops2
+import numpy.typing as npt
+import numpy as np
+from typing import Any, Literal
+from .settings import LOGGER
 
 # %% ###################################################
 # LOGGING
@@ -74,3 +78,50 @@ def setup_logger(
 
 def open_drops_door(url: str, user: str, password: str) -> None:
     drops2.set_credentials(url, user, password)
+
+
+
+# %% ###################################################
+# DERIVATES
+########################################################
+
+
+def from_K_to_C(t: npt.NDArray) -> npt.NDArray:
+    return t - 273.15
+
+
+def compute_wind_speed(u: npt.NDArray, v: npt.NDArray) -> npt.NDArray:
+    wind_speed = np.sqrt(u**2 + v**2)
+    wind_direction = np.arctan2(v, u) * 180 / np.pi + 180
+    return wind_speed
+
+
+def compute_wind_direction(u: npt.NDArray, v: npt.NDArray) -> npt.NDArray:
+    wind_direction = np.arctan2(v, u) * 180 / np.pi + 180
+    return wind_direction
+
+
+Derivates = Literal[
+    "from_K_to_C",
+    "compute_wind_speed",
+    "compute_wind_direction",
+]
+
+
+def get_derivates_fn(
+    function_code: Derivates,
+    logger: logging.Logger | None = None
+) -> Any:
+    logger = logger or LOGGER
+
+    match function_code:
+        case "from_K_to_C":
+            return from_K_to_C
+        case "compute_wind_speed":
+            return compute_wind_speed
+        case "compute_wind_direction":
+            return compute_wind_direction
+
+    logger.error(f"Unknown function for computing derivates: {function_code!r}")
+
+# %%

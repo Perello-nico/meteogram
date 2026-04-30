@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import numpy as np
-from typing import Any, Iterable, Mapping, Optional, Sequence, Tuple
+from typing import Any, Iterable, Mapping, Optional, Sequence, Tuple, Literal
 
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -464,7 +464,91 @@ def _add_midnight_lines(figure, x, panel_count):
 #####################################################################
 
 
-def t_rh_panel(
+def panel_t(
+        temperature: Sequence[Any],
+        dew_point: Optional[Sequence[Any]] = None,
+        color_t: str = COLOR_T,
+        color_td: str = COLOR_TD,
+        um_t: str = UM_T,
+) -> PanelSpec:
+    """Definition of the temperature panel."""
+
+    t_max = max(temperature)*1.18
+    t_min = min(temperature)*0.82
+    if dew_point is not None:
+        td_max = max(dew_point)*1.18
+        td_min = min(dew_point)*0.82
+    else:
+        td_max = t_max
+        td_min = t_min
+    y_t_max = max([t_max, td_max])
+    y_t_min = min([t_min, td_min])
+
+    series = []
+
+    t_series = SeriesSpec(
+                    "Temperature",
+                    temperature,
+                    line={"color": color_t, "width": WIDTH_LINE},
+                    trace_kwargs={
+                        # information for the hover tooltip
+                        "hovertemplate": f"%{{customdata:.1f}} {um_t}",
+                        "customdata": temperature,
+                    }
+                )
+    series.append(t_series)
+
+    if dew_point is not None:
+        td_series = SeriesSpec(
+                        "Dew Point",
+                        dew_point,
+                        line={"color": color_td, "width": WIDTH_LINE},
+                        trace_kwargs={
+                            # information for the hover tooltip
+                            "hovertemplate": f"%{{customdata:.1f}} {um_t}",
+                            "customdata": dew_point,
+                        },
+                    )
+        series.append(td_series)
+
+    return PanelSpec(
+                title="Temperature",
+                yaxis_title=um_t,
+                yaxis_range=[y_t_min, y_t_max],
+                series=series,
+            )
+
+
+def panel_rh(
+        humidity: Sequence[Any],
+        color_rh: str = COLOR_RH,
+        um_rh: str = UM_RH,
+) -> PanelSpec:
+    """Definition of relative humidity panel."""
+
+    series = []
+
+    rh_series = SeriesSpec(
+                    "Relative Humidity",
+                    humidity,
+                    line={"color": color_rh, "width": WIDTH_LINE},
+                    trace_kwargs={
+                        # information for the hover tooltip
+                        "hovertemplate": f"%{{customdata:.1f}} {um_rh}",
+                        "customdata": humidity,
+                    },
+                )
+    series.append(rh_series)
+
+    return PanelSpec(
+                title="Relative Humidity",
+                yaxis_title=um_rh,
+                yaxis_range=[0, 100],
+                series=series,
+            )
+
+
+def panel_t_rh(
         temperature: Sequence[Any],
         humidity: Sequence[Any],
         dew_point: Optional[Sequence[Any]] = None,
@@ -477,10 +561,18 @@ def t_rh_panel(
     """Definition of the temperature and relative humidity panel."""
 
     t_max = max(temperature)*1.18
-    t_min = min(temperature)*0.82
+    t_min = min(temperature)
+    if t_min > 0:
+        t_min = t_min*0.82
+    else:
+        t_min = t_min*1.18
     if dew_point is not None:
         td_max = max(dew_point)*1.18
-        td_min = min(dew_point)*0.82
+        td_min = min(dew_point)
+        if td_min > 0:
+            td_min = td_min*0.82
+        else:
+            td_min = td_min*1.18
     else:
         td_max = t_max
         td_min = t_min
@@ -537,91 +629,8 @@ def t_rh_panel(
                 series=series,
             )
 
-def t_panel(
-        temperature: Sequence[Any],
-        dew_point: Optional[Sequence[Any]] = None,
-        color_t: str = COLOR_T,
-        color_td: str = COLOR_TD,
-        um_t: str = UM_T,
-) -> PanelSpec:
-    """Definition of the temperature panel."""
 
-    t_max = max(temperature)*1.18
-    t_min = min(temperature)*0.82
-    if dew_point is not None:
-        td_max = max(dew_point)*1.18
-        td_min = min(dew_point)*0.82
-    else:
-        td_max = t_max
-        td_min = t_min
-    y_t_max = max([t_max, td_max])
-    y_t_min = min([t_min, td_min])
-
-    series = []
-
-    t_series = SeriesSpec(
-                    "Temperature",
-                    temperature,
-                    line={"color": color_t, "width": WIDTH_LINE},
-                    trace_kwargs={
-                        # information for the hover tooltip
-                        "hovertemplate": f"%{{customdata:.1f}} {um_t}",
-                        "customdata": temperature,
-                    }
-                )
-    series.append(t_series)
-
-    if dew_point is not None:
-        td_series = SeriesSpec(
-                        "Dew Point",
-                        dew_point,
-                        line={"color": color_td, "width": WIDTH_LINE},
-                        trace_kwargs={
-                            # information for the hover tooltip
-                            "hovertemplate": f"%{{customdata:.1f}} {um_t}",
-                            "customdata": dew_point,
-                        },
-                    )
-        series.append(td_series)
-
-    return PanelSpec(
-                title="Temperature",
-                yaxis_title=um_t,
-                yaxis_range=[y_t_min, y_t_max],
-                series=series,
-            )
-
-
-def rh_panel(
-        humidity: Sequence[Any],
-        color_rh: str = COLOR_RH,
-        um_rh: str = UM_RH,
-) -> PanelSpec:
-    """Definition of relative humidity panel."""
-
-    series = []
-
-    rh_series = SeriesSpec(
-                    "Relative Humidity",
-                    humidity,
-                    line={"color": color_rh, "width": WIDTH_LINE},
-                    trace_kwargs={
-                        # information for the hover tooltip
-                        "hovertemplate": f"%{{customdata:.1f}} {um_rh}",
-                        "customdata": humidity,
-                    },
-                )
-    series.append(rh_series)
-
-    return PanelSpec(
-                title="Relative Humidity",
-                yaxis_title=um_rh,
-                yaxis_range=[0, 100],
-                series=series,
-            )
-
-
-def wind_panel(
+def panel_wind(
         wind_speed: Sequence[Any],
         wind_direction: Optional[Sequence[Any]] = None,
         color_ws: str = COLOR_WS,
@@ -670,13 +679,38 @@ def wind_panel(
                 series=series
             )
 
+
+Panels = Literal[
+    "panel_t",
+    "panel_rh",
+    "panel_t_rh",
+    "compute_wind"
+]
+
+
+def get_panel(
+    panel_code: Panels,
+    logger: logging.Logger | None = None
+) -> Any:
+
+    logger = logger or LOGGER
+
+    match panel_code:
+        case "panel_t":
+            return panel_t
+        case "panel_rh":
+            return panel_rh
+        case "panel_t_rh":
+            return panel_t_rh
+        case "panel_wind":
+            return panel_wind
+
+    logger.error(f"Unknown panel code: {panel_code!r}")
+
+
 def plot_meteogram(
+        panels,
         times,
-        temperature,
-        dew_point,
-        humidity,
-        wind_speed,
-        wind_direction,
         time_now=None,
         title='Meteogram',
         nighttime=NIGHT_TIME,
@@ -711,24 +745,7 @@ def plot_meteogram(
         time_bands=time_bands,
     )
     
-    # generate panels
-    panel_t_rh = t_rh_panel(
-        temperature=temperature,
-        dew_point=dew_point,
-        humidity=humidity,
-    )
-
-    panel_wind = wind_panel(
-        wind_speed=wind_speed,
-        wind_direction=wind_direction
-    )
-
-    builder.extend(
-        [
-            panel_t_rh,
-            panel_wind
-        ]
-    )
+    builder.extend(panels)
 
     figure = builder.to_figure()
 

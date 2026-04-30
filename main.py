@@ -4,19 +4,73 @@ from __future__ import annotations
 import os
 import sys
 import yaml
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
-from meteogram.utils import setup_logger, open_drops_door
+from pathlib import Path
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from meteogram.utils import setup_logger, open_drops_door, get_derivates_fn
 from meteogram.collector import Model
+from meteogram.plot import get_panel
 from meteogram import collect_data, EventsCollection, select_data, plot_meteogram
+from meteogram.settings import DEFATUL_DURATION
+
+TIME_RUN = datetime.now()
+
 
 # %%
-def main(
-    path_config: str,
-    path_events: str,
-    time_from: Optional[datetime | str] = None,
-    time_to: Optional[datetime | str] = None,
-) -> None:
+class MeteogramCLI(BaseSettings):
+    model_config = SettingsConfigDict(cli_parse_args=True)
+
+    config: Path = Field(Path('test/configuration.yaml'), description="Path to configuration file (yaml)")
+    events: Path = Field(Path('test/events.csv'), description="Path to events file (csv)")
+    time_from: datetime = Field(TIME_RUN, description="Time from data selection (UTC)")
+    time_to: datetime = Field(TIME_RUN+timedelta(hours=DEFATUL_DURATION), description="Time to data selection (UTC)")
+
+    @field_validator("config", mode="before")
+    @classmethod
+    def _check_config_file(cls, v: str | Path) -> Path:
+        if isinstance(v, str):
+            v = Path(v)
+        # check if the file exists
+        if not v.is_file():
+            raise ValueError("Configuration file not found.")
+        return v
+
+    @field_validator("events", mode="before")
+    @classmethod
+    def _check_events_file(cls, v: str | Path) -> Path:
+        if isinstance(v, str):
+            v = Path(v)
+        # check if the file exists
+        if not v.is_file():
+            raise ValueError("Events file not found.")
+        return v
+
+    @field_validator("time_from", mode="before")
+    @classmethod
+    def _transform_time_from(cls, v: str | datetime) -> datetime:
+        if isinstance(v, str):
+            v = datetime.strptime(v, "%Y%m%d%H%M")
+        return v
+
+    @field_validator("time_to", mode="before")
+    @classmethod
+    def _transform_time_to(cls, v: str | datetime) -> datetime:
+        if isinstance(v, str):
+            v = datetime.strptime(v, "%Y%m%d%H%M")
+        return v
+
+# %%
+def main() -> None:
+
+    cli = MeteogramCLI()  # type: ignore
+
+    path_config = cli.config
+    path_events = cli.events
+    time_from = cli.time_from
+    time_to = cli.time_to
 
     # load configuration file
     path_config_abs = os.path.abspath(path_config)
@@ -29,14 +83,14 @@ def main(
     path_config_dir = os.path.dirname(path_config_abs)
 
     # path save data
-    path_save = config.get('path_save')
-    if path_save is None:
-        path_save = '.'  # to save in the configuration file directory
+    path_save = config.get('path_save', '.')  # default: save in the configuration file directory
     if os.path.isabs(path_save):
         path_save_abs = path_save
     else:
         path_save_abs = os.path.abspath(os.path.join(path_config_dir, path_save))
     os.makedirs(path_save_abs, exist_ok=True)
+
+    # by default, do not save temporary data
     save_temporary_data = config.get('save_temporary_data', False)
 
     # logging initialization
@@ -51,29 +105,38 @@ def main(
     logger.info('config path: %s', path_config_abs)
     logger.info('output path: %s', path_save_abs)
 
-    # get models
-    model_cfg_list = config.get('model', [])
-    if len(model_cfg_list) != 1:
-        logger.error('Too many models provided - currently only one model is supported')
-    model_cfg = model_cfg_list[0]
-
-    # create model
-    model = Model.from_dict(model_cfg)
+    # check if plot panels are present
+    plot_panels = config.get('plot_panels', [])
+    if len(plot_panels) == 0:
+        logger.error("Plot panels missing in configuration file")
+        return
 
     # open drops door
     url = config.get('dds_url')
     user = config.get('dds_user')
     password = config.get('dds_password')
     if url and user and password:
+        logger.info('DDS authentication')
         open_drops_door(url, user, password)
     else:
         logger.warning('skipping DDS authentication')
 
-    # generate events
-    events = EventsCollection.from_csv(path_events, time_from, time_to)
+    # get models
+    model_cfg_list = config.get('model', [])
+    if len(model_cfg_list) != 1:
+        logger.error('Too many models provided - currently only one model is supported - take first one')
+    model_cfg = model_cfg_list[0]
 
+    # create model
+    model = Model.from_dict(model_cfg)
+
+    # generate events
+    events = EventsCollection.from_csv(path_events, time_from, time_to)  # type: ignore
+
+    # time range for selection
     time_from_sel, time_to_sel = events.timebox()
 
+    # data collection from drops
     data, metadata = collect_data(
         model=model,
         time_from=time_from_sel,
@@ -81,61 +144,70 @@ def main(
         logger=logger,
     )
 
+    # save metadata
+    metadata.to_json(os.path.join(path_save_abs, "metadata.json"), date_format='iso')
+
     # select data in the event
     data_selection = select_data(data, events)
 
-    # save data
+    # add derivates to the dataset
+    derivates = config.get('derivates', [])
+    if len(derivates) > 0:
+        logger.info('Computing derivates variables')
+        for derivate in derivates:
+            func_deriv_code = derivate.get('function')
+            if func_deriv_code is None:
+                logger.error('Function to compute derivate is missing')
+                continue
+            func_deriv = get_derivates_fn(func_deriv_code, logger)
+            vars_input = dict()
+            for variable in derivate.get('from'):
+                vars_input[variable['label']] = data_selection[variable['id']].values
+            output = func_deriv(**vars_input)
+            data_selection[derivate['id']] = output
+
+    # save data (optional)
     if save_temporary_data:
         data.to_netcdf(os.path.join(path_save_abs, "data_model.nc"))    
-        metadata.to_csv(os.path.join(path_save_abs, "metadata.csv"), index=False)
-        data_selection.to_csv(os.path.join(path_save_abs, "data_selection.csv"), index=False)
+        data_selection.to_json(os.path.join(path_save_abs, "data_selection.json"), date_format='iso')
 
-    # # lat/lon selection
-    # lat_sel = 39.0
-    # lon_sel = 16.0
+    # check if all variables needed to plot the meteogram are present
+    for panel in plot_panels:
+        for var in panel['variables']:
+            var_plot = var['id']
+            if var_plot not in data_selection.columns:
+                logger.error(f"Variable {var_plot} missing - needed for plotting")
 
-    # lats = data.latitude.values
-    # lons = data.longitude.values
+    # create meteogram plot for each event
+    for id in events.id_list:
+        logger.info(f"Plotting meteogram for event id: {id}")
 
-    # # lats and lons are 2D, I want row, col indices of the point closest to lat_sel/lon_sel
-    # lat_diff = lats - lat_sel
-    # lon_diff = lons - lon_sel
-    # distance = (lat_diff**2 + lon_diff**2) ** 0.5
-    # row, col = np.unravel_index(distance.argmin(), distance.shape)
-    # selected_lat = float(lats[row, col])
-    # selected_lon = float(lons[row, col])
+        # data selection
+        data_sel = data_selection[data_selection.id == id]
+        times = data_sel['time']
 
-    # data_sel = data.sel(rows=row, cols=col)
-    # temperature_k = data_sel['2t'].values
-    # dew_point_k = data_sel['2d'].values
-    # temperature = temperature_k - 273.15
-    # dew_point = dew_point_k - 273.15
-    # humidity = data_sel['rh'].values
-    # wind_10u = data_sel['10u'].values
-    # wind_10v = data_sel['10v'].values
-    # wind_speed = np.sqrt(wind_10u**2 + wind_10v**2)
-    # wind_direction = np.arctan2(wind_10v, wind_10u) * 180 / np.pi + 180
-    
+        panels_plot_list = []
 
-    # time_now = datetime(2026, 2, 28, 18)
+        for panel in plot_panels:
+            panel_code = panel.get('type')
+            panel_fn = get_panel(panel_code, logger)
+            vars_plot = dict()
+            for variable in panel.get('variables'):
+                vars_plot[variable['label']] = data_sel[variable['id']].values
+            panel_plot = panel_fn(**vars_plot)
+            panels_plot_list.append(panel_plot)
 
-    # figure = plot_meteogram(
-    #     times,
-    #     temperature,
-    #     dew_point,
-    #     humidity,
-    #     wind_speed,
-    #     wind_direction,
-    #     title='Meteogram'
-    # )
+        figure = plot_meteogram(
+            panels_plot_list,
+            times,
+            title=f'{id}'
+        )
 
-    # figure.write_html("test/meteogram_demo.html")
-    # print("Wrote meteogram_demo.html")
+        figure.write_html(os.path.join(path_save_abs, f"meteogram_{id}.html"))
+        figure.write_json(os.path.join(path_save_abs, f"meteogram_{id}.json"))
 
 
 if __name__ == "__main__":
-    path_config = sys.argv[1]
-    path_events = sys.argv[2]
-    time_from = sys.argv[3]
-    time_to = sys.argv[4]
-    main(path_config, path_events, time_from, time_to)
+    main()
+
+# %%

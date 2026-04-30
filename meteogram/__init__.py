@@ -17,5 +17,5 @@ __all__ = [
     "plot_meteogram",
     "collect_data",
     "EventsCollection",
-    "select_data"
+    "select_data",
 ]
