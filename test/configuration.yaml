@@ -1,0 +1,62 @@
+path_save: 'output'
+save_temporary_data: true
+log: true
+log_level: info
+# dds_url: ...
+# dds_user: ...
+# dds_password: ...
+model:
+  - id: ICON_LAMI
+    forecast_hours: 72
+    analysis_hours: 0
+    variables:
+      - id: 2t
+        level: 2.0
+      - id: 2d
+        level: 2.0
+      - id: rh
+        level: 2.0
+      - id: 10u
+        level: 10.0
+      - id: 10v
+        level: 10.0
+derivates:
+  - id: 2t_C
+    function: from_K_to_C
+    from:
+      - id: 2t
+        label: t
+  - id: 2d_C
+    function: from_K_to_C
+    from:
+      - id: 2d
+        label: t
+  - id: wind_speed
+    function: compute_wind_speed
+    from:
+      - id: 10u
+        label: u
+      - id: 10v
+        label: v
+  - id: wind_dir
+    function: compute_wind_direction
+    from:
+      - id: 10u
+        label: u
+      - id: 10v
+        label: v
+plot_panels:
+  - type: panel_t_rh
+    variables:
+      - id: 2t_C
+        label: temperature
+      - id: 2d_C
+        label: dew_point
+      - id: rh
+        label: humidity
+  - type: panel_wind
+    variables:
+      - id: wind_speed
+        label: wind_speed
+      - id: wind_dir
+        label: wind_direction
