@@ -684,7 +684,7 @@ Panels = Literal[
     "panel_t",
     "panel_rh",
     "panel_t_rh",
-    "compute_wind"
+    "panel_wind"
 ]
 
 

@@ -6,12 +6,9 @@ import xarray as xr
 import pandas as pd
 import numpy as np
 import pytz
-from pyproj import CRS
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional
-from shapely.geometry import Point
+from typing import Any, List, Dict, Optional
 from datetime import datetime
-from pyproj import Transformer
 from .settings import LOGGER
 
 
@@ -29,7 +26,7 @@ class Event():
         self,
         time_from: datetime | str,
         time_to: datetime | str,
-        geometry: Point,
+        geometry: Any,
         epsg: int = 4326
     ):
 
@@ -114,6 +111,12 @@ class EventsCollection():
             # since I provide time information, I force it to the dataset
             df[key_time_to] = time_to
         # create the collection of events
+        try:
+            from shapely.geometry import Point
+        except ModuleNotFoundError as exc:
+            raise ModuleNotFoundError(
+                "shapely is required to build events from CSV."
+            ) from exc
         collection = dict()
         for _, row in df.iterrows():
             id = row[key_id]
@@ -141,11 +144,18 @@ class EventsCollection():
 ######################################################################
 
 def convert_geometry(
-    geometry: Point,
+    geometry: Any,
     epsg_in: int,
     epsg_out: int
-) -> Point:
+) -> Any:
     """Convert geometry to specific EPSG"""
+    try:
+        from pyproj import CRS, Transformer
+        from shapely.geometry import Point
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError(
+            "pyproj and shapely are required for event geometry conversion."
+        ) from exc
     crs_in = CRS.from_epsg(epsg_in)
     crs_out = CRS.from_epsg(epsg_out)
     transformer = Transformer.from_crs(crs_in, crs_out, always_xy=True)

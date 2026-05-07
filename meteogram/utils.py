@@ -1,7 +1,6 @@
 # %%
 import logging
 import os
-import drops2
 import numpy.typing as npt
 import numpy as np
 from typing import Any, Literal
@@ -77,6 +76,13 @@ def setup_logger(
 ########################################################
 
 def open_drops_door(url: str, user: str, password: str) -> None:
+    try:
+        import drops2
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError(
+            "drops2 is required for DDS authentication. Install/configure drops2 "
+            "before calling open_drops_door."
+        ) from exc
     drops2.set_credentials(url, user, password)
 
 

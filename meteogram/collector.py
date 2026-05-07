@@ -11,7 +11,6 @@ import pytz
 import numpy as np
 import pandas as pd
 import xarray as xr
-from drops2 import coverages
 from .settings import MAX_ITER_DROPS, LOGGER
 
 # %% ###################################################
@@ -112,6 +111,16 @@ class Model():
 ########################################################
 
 # %% HELPER FUNCTIONS
+
+def _get_coverages():
+    try:
+        from drops2 import coverages
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError(
+            "drops2 is required for data collection. Install/configure drops2 "
+            "before calling collect_data or get_model_dates."
+        ) from exc
+    return coverages
 
 def round_to_closest(date: datetime, unit: str = 'hour') -> datetime:
     unit = unit.lower()
@@ -220,6 +229,7 @@ def get_model_dates(
         time_to_sel = time_to.astimezone(tz)
 
     # define the time for search
+    coverages = _get_coverages()
     start_time = (time_from_sel - model.get_forecast_hours()).strftime('%Y%m%d%H%M')
     stop_time = (time_to_sel + model.get_analysis_hours()).strftime('%Y%m%d%H%M')
     logger.info('Checking dates for model:%s in [%s, %s]', model.id, start_time, stop_time)
@@ -358,6 +368,7 @@ def collect_data(
             return xr.Dataset(), pd.DataFrame(columns=columns_metadata)
 
     # get the data
+    coverages = _get_coverages()
     df_dates = df_dates.set_index(['variable_id', 'time'])
     data = xr.Dataset()
     metadata = pd.DataFrame(columns=columns_metadata)
